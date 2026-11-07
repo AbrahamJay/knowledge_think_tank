@@ -18,3 +18,21 @@ def node_pdf_to_md(state: ImportGraphState) -> ImportGraphState:
     state = parse_pdf_to_markdown(state)
     add_done_task(state["task_id"], "node_pdf_to_md")
     return state
+
+if __name__ == "__main__":
+    import os
+    from app.process.import_.agent.state import create_default_state
+    from app.shared.runtime.logger import logger, PROJECT_ROOT
+    logger.info("===== 开始 node_pdf_to_md 节点联调测试 =====")
+
+    test_pdf_path = os.path.join(PROJECT_ROOT, "doc", "H3C LA2608室内无线网关 用户手册-6W100-整本手册.pdf")
+    test_state = create_default_state(
+        task_id="test_pdf2md_task_001",
+        pdf_path=test_pdf_path,
+        local_dir=os.path.join(PROJECT_ROOT, "output"),
+    )
+
+    result = node_pdf_to_md(test_state)
+    logger.info(f"md_path: {result['md_path']}")
+    logger.info(f"md_content长度: {len(result['md_content'])}")
+    logger.info("===== 结束 node_pdf_to_md 节点联调测试 =====")
