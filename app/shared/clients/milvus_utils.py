@@ -2,6 +2,9 @@
 工具模块，负责提供 milvus 相关的辅助能力。
 """
 from pymilvus import MilvusClient, AnnSearchRequest, WeightedRanker
+# LoadState 未在 pymilvus 顶层导出，与 pymilvus.milvus_client 内部使用同一来源
+from pymilvus.client.types import LoadState
+
 from app.shared.config.milvus_config import milvus_config
 from app.shared.runtime.logger import logger
 
@@ -48,7 +51,7 @@ def create_hybrid_search_requests(dense_vector, sparse_vector, dense_params=None
     """
     # 稠密向量默认搜索参数：余弦相似度（COSINE），适配BGE-M3稠密向量并与建库参数保持一致
     if dense_params is None:
-        dense_params = {"metric_type": "IP"}
+        dense_params = {"metric_type": "COSINE"}
     # 稀疏向量默认搜索参数：内积（IP），适配BGE-M3稀疏向量
     if sparse_params is None:
         sparse_params = {"metric_type": "IP"}
@@ -72,6 +75,28 @@ def create_hybrid_search_requests(dense_vector, sparse_vector, dense_params=None
     )
 
     return [dense_req, sparse_req]
+
+
+def ensure_collection_loaded(client, collection_name: str) -> bool:
+    """
+    确保集合已加载进内存
+    Milvus 的 delete(带 filter)、search、hybrid_search 都由 QueryNode 执行，集合处于 NotLoad 时会直接抛
+    code=101 collection not loaded，因此所有读写入口在操作前都应保证集合已经加载
+    :param client: MilvusClient实例
+    :param collection_name: 集合名称
+    :return: True 表示本次触发了加载，False 表示集合本来就处于已加载状态
+    """
+    try:
+        state = client.get_load_state(collection_name).get("state")
+        if state == LoadState.Loaded:
+            logger.debug(f"集合[{collection_name}]已处于加载状态，无需重复加载")
+            return False
+        logger.info(f"集合[{collection_name}]当前未加载(state={state})，执行加载操作")
+        client.load_collection(collection_name)
+        return True
+    except Exception as e:
+        logger.error(f"检查或加载集合[{collection_name}]失败：{str(e)}", exc_info=True)
+        raise
 
 
 def hybrid_search(client, collection_name, reqs, ranker_weights=(0.5, 0.5), norm_score=False, limit=5,

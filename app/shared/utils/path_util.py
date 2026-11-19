@@ -47,3 +47,62 @@ def get_project_root(identifier: str = ".env") -> Path:
 
 
 PROJECT_ROOT = get_project_root(".env")
+
+# 模型快照目录的判定标志文件，transformers 只有在该目录下找到它才会走本地加载
+_MODEL_CONFIG_FILE = "config.json"
+
+
+def resolve_model_path(raw_path: str, env_name: str = "") -> str:
+    """
+    归一化本地模型路径，兼容 ModelScope / HuggingFace 缓存的层级差异。
+
+    背景：底层 from_pretrained 只有在「传入目录里真的有 config.json」时才认为是本地模型；
+    否则会把这个字符串当成 HuggingFace 仓库 id 处理，抛出与真实原因（路径写错）毫无关系的
+    HFValidationError 或 "Unrecognized model in ..." 异常，非常难定位。这里提前把目录补齐并校验。
+
+    支持两种写法：
+    1. 快照目录本身：.../BAAI--bge-m3/snapshots/master
+    2. 模型根目录：.../BAAI--bge-m3（自动向下寻找含 config.json 的 revision 目录）
+
+    :param raw_path: 环境变量中配置的模型路径，可为仓库 id（如 BAAI/bge-m3）或空值
+    :param env_name: 环境变量名，仅用于拼装可读的报错信息
+    :return: 可直接传给模型加载器的路径字符串；非本地路径时原样返回
+    """
+    value = (raw_path or "").strip()
+    if not value:
+        return value
+
+    # 形如 BAAI/bge-m3 的仓库 id 或 http 地址不属于本地目录，交给底层库自行解析
+    candidate = Path(value).expanduser()
+    looks_local = (
+        candidate.is_absolute()
+        or value.startswith((".", "~", "/", "\\"))
+        or "\\" in value
+        or candidate.exists()
+    )
+    if not looks_local:
+        return value
+
+    if not candidate.is_dir():
+        raise FileNotFoundError(
+            f"模型目录不存在{'（配置项：' + env_name + '）' if env_name else ''}：{candidate}"
+        )
+
+    # 已经是完整快照目录，直接返回
+    if (candidate / _MODEL_CONFIG_FILE).is_file():
+        return str(candidate)
+
+    # 只配到了模型根目录：在 snapshots 下挑选最新的 revision 目录
+    snapshots_dir = candidate / "snapshots"
+    if snapshots_dir.is_dir():
+        # revision 目录名不固定（master / v1 / commit 哈希），按修改时间倒序取第一个合法的
+        revisions = sorted(snapshots_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
+        for revision in revisions:
+            if (revision / _MODEL_CONFIG_FILE).is_file():
+                return str(revision)
+
+    raise FileNotFoundError(
+        f"模型目录不完整{'（配置项：' + env_name + '）' if env_name else ''}：{candidate} 及其 "
+        f"snapshots 子目录中都没有 {_MODEL_CONFIG_FILE}；ModelScope 下载后的完整快照层级为 "
+        f".../models/<org>--<name>/snapshots/<revision>，需要配置到最后一层"
+    )

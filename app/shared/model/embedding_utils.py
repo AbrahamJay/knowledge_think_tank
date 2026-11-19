@@ -5,10 +5,20 @@ from pymilvus.model.hybrid import BGEM3EmbeddingFunction
 
 from app.shared.config.embedding_config import embedding_config
 from app.shared.runtime.logger import logger
+from app.shared.utils.path_util import resolve_model_path
 
 _DEFAULT_EMBEDDING_MODEL = "BAAI/bge-m3"
 _DEFAULT_EMBEDDING_DEVICE = "cpu"
 _bge_m3_ef: BGEM3EmbeddingFunction | None = None
+
+
+def resolve_embedding_model_name() -> str:
+    """
+    解析 BGE-M3 模型标识：本地快照目录优先，未配置本地路径时回退仓库 id。
+    :return: 可直接传给 BGEM3EmbeddingFunction 的 model_name
+    """
+    local_path = resolve_model_path(embedding_config.bge_m3_path, "BGE_M3_PATH")
+    return local_path or embedding_config.bge_m3 or _DEFAULT_EMBEDDING_MODEL
 
 
 def get_bge_m3_ef() -> BGEM3EmbeddingFunction:
@@ -24,7 +34,7 @@ def get_bge_m3_ef() -> BGEM3EmbeddingFunction:
 
     # 从环境变量加载配置，无配置则使用默认值
     # 本地有可以使用本地地址！ 没有使用 "BAAI/bge-m3" 会自动下载！ 如果云端部署也可以使用url地址！
-    model_name = embedding_config.bge_m3_path or embedding_config.bge_m3 or _DEFAULT_EMBEDDING_MODEL
+    model_name = resolve_embedding_model_name()
     device = embedding_config.bge_device or _DEFAULT_EMBEDDING_DEVICE
     use_fp16 = embedding_config.bge_fp16
 

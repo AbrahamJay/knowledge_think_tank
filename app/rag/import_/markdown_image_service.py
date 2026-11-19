@@ -18,11 +18,12 @@ from app.infra.llm.providers import llm_provider
 from app.infra.object_storage.minio_gateway import minio_gateway
 from app.process.import_.agent.state import ImportGraphState
 from app.rag.import_.config import SUPPORTED_IMAGE_EXTENSIONS, IMAGE_CONTEXT_SUB_CHARS
-from app.shared.runtime.logger import logger
+from app.shared.runtime.logger import logger, step_log
 from app.shared.runtime.load_prompt import load_prompt
 from app.shared.utils.rate_limit_utils import apply_api_rate_limit
 
 
+@step_log("validate_and_data")
 def validate_and_data(state: ImportGraphState) -> Tuple[Path, Path, str]:
     md_path: str = state.get("md_path")
     if not md_path:
@@ -39,6 +40,7 @@ def validate_and_data(state: ImportGraphState) -> Tuple[Path, Path, str]:
     return md_path_obj, md_images_dir_obj, md_content
 
 
+@step_log("scan_image")
 def scan_image(md_content: str, md_images_dir_obj: Path) -> list[tuple[str, str, tuple[str, str]]]:
     """
     扫描 Markdown 中的图片
@@ -68,10 +70,12 @@ def scan_image(md_content: str, md_images_dir_obj: Path) -> list[tuple[str, str,
     return image_info_list
 
 
+@step_log("summarize_images")
 def summarize_images(image_info_list: list[tuple[str, str, tuple[str, str]]], root_folder: str) -> dict[str, str]:
     """
     调用视觉模型生成图片说明
     :param image_info_list: 图片信息列表
+    :param root_folder: 文件夹名称
     :return: 图片说明字典
     """
     summary_image_dict: dict[str, str] = {}
@@ -101,6 +105,7 @@ def summarize_images(image_info_list: list[tuple[str, str, tuple[str, str]]], ro
     return summary_image_dict
 
 
+@step_log("upload_images_get_url")
 def upload_images_get_url(image_info_list: list[tuple[str, str, tuple[str, str]]], stem: str) -> dict[str, str]:
     """
     上传图片到 MinIO 并获取 URL
@@ -142,6 +147,44 @@ def upload_images_get_url(image_info_list: list[tuple[str, str, tuple[str, str]]
     return image_url_dict
 
 
+@step_log("md_content_image_replace")
+def md_content_image_replace(md_content: str, summary_image_dict: dict[str, str],
+                             image_url_dict: dict[str, str]) -> str:
+    """
+    完成图片说明的替换，返回新的 md_content
+    :param md_content: 文件内容
+    :param summary_image_dict: 图片说明字典
+    :param image_url_dict: 图片 URL 字典
+    :return: 新的 md_content
+    """
+    # 1. 循环处理 对应图片字典
+    for image_name, image_summary in summary_image_dict.items():
+        # 2. 获取每张图片的信息
+        image_url = image_url_dict.get(image_name)
+        # 3. 定义匹配正则
+        reg = re.compile(r"\!\[.*?\]\(.*?" + re.escape(image_name) + r".*?\)")
+        # 4. 使用正则替换
+        md_content = reg.sub(lambda x: f"![{image_summary}]({image_url})", md_content)
+        logger.debug(f"已经完成：{image_name}图片替换，替换入的描述：{image_summary}，替换的地址：{image_url}")
+    return md_content
+
+
+@step_log("backup_new_md_content")
+def backup_new_md_content(md_content_new: str, md_path_obj: Path) -> Path:
+    """
+    备份新的 md_content
+    :param md_content_new: 新的 md_content
+    :param md_path_obj: 原始 md 文件路径
+    :return: 备份文件路径
+    """
+    # 1. 获取新的Path对象
+    md_path_obj_new: Path = md_path_obj.with_name(f"{md_path_obj.stem}_new.md")
+    md_path_obj_new.write_text(data=md_content_new, encoding="utf-8")
+    logger.info(f"新的 md_content 已备份到：{md_path_obj_new}")
+    return md_path_obj_new
+
+
+@step_log("enrich_markdown_images")
 def enrich_markdown_images(state: ImportGraphState) -> ImportGraphState:
     """
     Markdown 图片增强服务：
@@ -163,4 +206,12 @@ def enrich_markdown_images(state: ImportGraphState) -> ImportGraphState:
     # 5. 将图片信息传到minio的服务器，获取图片url
     image_url_dict: dict[str, str] = upload_images_get_url(image_info_list, md_path_obj.stem)
     print(f"图片上传完成，共 {len(image_url_dict)} 张图片")
+    # 6. 替换 Markdown 图片地址并回写 md_content
+    md_content_new: str = md_content_image_replace(md_content, summary_image_dict, image_url_dict)
+    # 7. 将md_content_new 进行磁盘化备份
+    md_path_obj_new: Path = backup_new_md_content(md_content_new, md_path_obj)
+    # 8. 更新state
+    state["md_content"] = md_content_new
+    state["md_path"] = str(md_path_obj_new)
+
     return state
