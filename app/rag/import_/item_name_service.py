@@ -132,14 +132,14 @@ def prepare_item_name_collection():
     # 稠密向量
     index_params.add_index(
         field_name="dense_vector",
-        index_type="IVF_FLAT",
+        index_type="HNSW",
         index_name=DENSE_VECTOR_INDEX_NAME,
         metric_type="COSINE",
-        params={"nlist": 128},  # IVF_FLAT 的有效参数，M/efConstruction 属于 HNSW
-        # params={
-        #     "M": 64,  # 相邻的最大节点数量
-        #     "efConstruction": 100  # 候选的节点数量
-        # },
+        # params={"nlist": 128},  # IVF_FLAT 的有效参数，M/efConstruction 属于 HNSW
+        params={
+            "M": 64,  # 相邻的最大节点数量
+            "efConstruction": 100  # 候选的节点数量
+        },
     )
     # 稀疏向量
     index_params.add_index(

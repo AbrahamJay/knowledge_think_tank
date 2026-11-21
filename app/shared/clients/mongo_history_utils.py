@@ -2,8 +2,10 @@
 工具模块，负责提供 mongo history 相关的辅助能力。
 """
 import os
+import re
 from typing import Any
 from datetime import datetime
+from urllib.parse import quote_plus
 from pymongo import MongoClient
 from bson import ObjectId
 from dotenv import load_dotenv
@@ -13,6 +15,29 @@ from app.shared.runtime.logger import logger
 # 加载.env文件中的环境变量，使os.getenv能读取到配置
 load_dotenv()
 
+
+def _escape_mongo_url(mongo_url: str) -> str:
+    """
+    对 mongodb URI 中内嵌的 username/password 做 RFC 3986 转义。
+    解决密码含 @ : / # % 等特殊字符时，pymongo 报
+    "Username and password must be escaped according to RFC 3986" 的问题。
+    若 URI 不含账号密码或格式不匹配，则原样返回。
+    """
+    if not mongo_url:
+        return mongo_url
+    # 按最后一个 @ 切分 userinfo 与 host（host 部分不含 @），避免密码里的特殊字符干扰
+    match = re.match(r"^(mongodb(?:\+srv)?://)(.*)@([^@]*)$", mongo_url)
+    if not match:
+        return mongo_url
+    scheme, userinfo, rest = match.group(1), match.group(2), match.group(3)
+    # userinfo 形如 user:password，按第一个冒号切分（密码里可能还有冒号）
+    if ":" in userinfo:
+        user, password = userinfo.split(":", 1)
+        escaped_user = quote_plus(user)
+        escaped_password = quote_plus(password)
+        return f"{scheme}{escaped_user}:{escaped_password}@{rest}"
+    # 只有用户名没有密码
+    return f"{scheme}{quote_plus(userinfo)}@{rest}"
 
 class HistoryMongoTool:
     """
@@ -31,8 +56,11 @@ class HistoryMongoTool:
             # 从环境变量读取要使用的数据库名称
             self.db_name = os.getenv("MONGO_DB_NAME")
 
-            # 创建MongoDB客户端实例，建立与数据库的连接
-            self.client = MongoClient(self.mongo_url)
+            # 对 URI 内嵌的账号密码做 RFC 3986 转义，避免特殊字符导致连接失败
+            safe_mongo_url = _escape_mongo_url(self.mongo_url)
+
+            # 创建MongoDB客户端实例，建立与数据库的连接（使用转义后的地址）
+            self.client = MongoClient(safe_mongo_url, serverSelectionTimeoutMS=3000)
             # 获取指定名称的数据库对象 user 库
             self.db = self.client[self.db_name]
             # 获取对话记录的集合（相当于关系型数据库的表），集合名：chat_message  db.chat_message
