@@ -1,9 +1,10 @@
 from app.infra.llm.providers import llm_provider
 from app.infra.vectorstore.milvus_gateway import milvus_gateway
 from app.process.query.agent.state import QueryGraphState
-from app.shared.runtime.logger import logger
+from app.shared.runtime.logger import logger, step_log
 
 
+@step_log('validate_and_get_data')
 def validate_and_get_data(state: QueryGraphState):
     """
         验证输入数据并获取 item_names 和 rewritten_query
@@ -18,6 +19,7 @@ def validate_and_get_data(state: QueryGraphState):
     return item_names, rewritten_query
 
 
+@step_log('select_chunks_in_milvus')
 def select_chunks_in_milvus(item_names: list[str], rewritten_query: str) -> list[dict]:
     """
         根据商品名称和改写后的问题从 Milvus 中检索相关的知识切片
@@ -56,6 +58,7 @@ def select_chunks_in_milvus(item_names: list[str], rewritten_query: str) -> list
     return response[0]
 
 
+@step_log('after_deal_milvus_result')
 def after_deal_milvus_result(real_response) -> list[dict]:
     """
         处理 Milvus 检索结果
@@ -83,6 +86,7 @@ def after_deal_milvus_result(real_response) -> list[dict]:
     return embedding_chunks
 
 
+@step_log('search_by_embedding')
 def search_by_embedding(state: QueryGraphState) -> list[dict]:
     """
     向量检索服务：
