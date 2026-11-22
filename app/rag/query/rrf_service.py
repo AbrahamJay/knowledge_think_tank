@@ -1,8 +1,8 @@
 from app.process.query.agent.state import QueryGraphState
 from app.rag.query.config import MILVUS_CHUNK_TOP_K
-from app.shared.runtime.logger import logger
+from app.shared.runtime.logger import logger, step_log
 
-
+@step_log("validate_and_get_data")
 def validate_and_get_data(state: QueryGraphState):
     """
         验证并获取数据
@@ -16,7 +16,7 @@ def validate_and_get_data(state: QueryGraphState):
         raise ValueError("embedding_chunks or hyde_embedding_chunks 为空")
     return embedding_chunks, hyde_embedding_chunks
 
-
+@step_log("use_rrf_rank")
 def use_rrf_rank(data_list, k: int = 60):
     """
         使用RRF算法进行排名
@@ -44,7 +44,7 @@ def use_rrf_rank(data_list, k: int = 60):
     # 截取分最高的前k个
     return rrf_chunks[:MILVUS_CHUNK_TOP_K]
 
-
+@step_log("fuse_by_rrf")
 def fuse_by_rrf(state: QueryGraphState) -> QueryGraphState:
     """
     RRF 融合服务：
