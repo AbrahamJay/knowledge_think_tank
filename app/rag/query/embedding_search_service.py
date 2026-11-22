@@ -1,6 +1,7 @@
 from app.infra.llm.providers import llm_provider
 from app.infra.vectorstore.milvus_gateway import milvus_gateway
 from app.process.query.agent.state import QueryGraphState
+from app.rag.query.config import MILVUS_CHUNK_TOP_K
 from app.shared.runtime.logger import logger, step_log
 
 
@@ -36,14 +37,14 @@ def select_chunks_in_milvus(item_names: list[str], rewritten_query: str) -> list
         dense_vector=dense_vector,
         sparse_vector=sparse_vector,
         expr=f"item_name in {item_names}",
-        limit=5 * 2
+        limit=MILVUS_CHUNK_TOP_K * 2
     )
     # 3.调用混合检索函数获取结果
     response = milvus_gateway.hybrid_search(
         collection_name=milvus_gateway.chunks_collection,
         reqs=reqs,
         ranker_weights=(0.5, 0.5),
-        limit=5,
+        limit=MILVUS_CHUNK_TOP_K,
         norm_score=True,
         output_fields=[
             "chunk_id",

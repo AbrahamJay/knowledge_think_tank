@@ -1,4 +1,5 @@
 from app.process.query.agent.state import QueryGraphState
+from app.rag.query.config import MILVUS_CHUNK_TOP_K
 from app.shared.runtime.logger import logger
 
 
@@ -39,7 +40,9 @@ def use_rrf_rank(data_list, k: int = 60):
     rrf_chunks.sort(key=lambda x: x.get("score", 0.0), reverse=True)
     # sorted(chunk_dict.values(), key=lambda x: x.get("score", 0.0), reverse=True)
     logger.debug(f"排序之后,长度{len(rrf_chunks)},内容：{rrf_chunks}")
-    return rrf_chunks
+
+    # 截取分最高的前k个
+    return rrf_chunks[:MILVUS_CHUNK_TOP_K]
 
 
 def fuse_by_rrf(state: QueryGraphState) -> QueryGraphState:
