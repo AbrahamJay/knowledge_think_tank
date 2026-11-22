@@ -85,10 +85,8 @@ def call_llm_rewritten_and_extract_itemnames(history_list: list[dict], original_
      问题: 强调,以本次用户的问题为主,进行提取! 用户可能转变提问的主体!!
 
     """
-    history_text: str = None
     if history_list:
         history_text_list: list[str] = []
-
         for index, history in enumerate(history_list, start=1):
             if history.get("role") == 'user':
                 history_text_list.append((
